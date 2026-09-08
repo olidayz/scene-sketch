@@ -8,7 +8,7 @@ for(const file of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort())sq
 const DB={prepare(query){let args=[];return {bind(...values){args=values;return this;},async first(){return sql.prepare(query).get(...args)||null;},async all(){return {results:sql.prepare(query).all(...args)};},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes)}};}};},async batch(statements){return Promise.all(statements.map(s=>s.run()));}};
 globalThis.__env={DB,KEY_ENCRYPTION_SECRET:'test-only-encryption-secret-not-production'};
 globalThis.__headers=new Headers({'oai-authenticated-user-id':'owner-a'});
-function moduleURL(file,studio){let source=readFileSync(file,'utf8').replace("import { env } from 'cloudflare:workers';","const env = globalThis.__env;").replace("import { headers } from 'next/headers';","const headers = async () => globalThis.__headers;");if(studio)source=source.replaceAll("'@/lib/studio'",JSON.stringify(studio));source=source.replaceAll("'@/lib/prompting'",JSON.stringify(moduleURLPrompt)).replaceAll("'@/lib/storyboard'",JSON.stringify(moduleURLStoryboard));const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;return 'data:text/javascript;base64,'+Buffer.from(code).toString('base64');}
+function moduleURL(file,studio){let source=readFileSync(file,'utf8').replace("import { env } from 'cloudflare:workers';","const env = globalThis.__env;").replace("import { headers } from 'next/headers';","const headers = async () => globalThis.__headers;");source=source.replaceAll("'@/lib/demo'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/demo.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64')));if(studio)source=source.replaceAll("'@/lib/studio'",JSON.stringify(studio));source=source.replaceAll("'@/lib/prompting'",JSON.stringify(moduleURLPrompt)).replaceAll("'@/lib/storyboard'",JSON.stringify(moduleURLStoryboard));const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;return 'data:text/javascript;base64,'+Buffer.from(code).toString('base64');}
 const moduleURLPrompt='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/prompting.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 const moduleURLStoryboard='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/storyboard.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 const url=moduleURL('lib/studio.ts');const studio=await import(url);const generate=await import(moduleURL('app/api/generate/route.ts',url));
@@ -42,4 +42,31 @@ test('fal requests reject redirects without following them or parsing their bodi
  };
  try{await assert.rejects(()=>studio.fal('https://queue.fal.run/minimax/h3-max-turbo/text-to-video',{method:'POST',body:'{}'}),/Unexpected redirect/);assert.equal(calls,1);}
  finally{globalThis.fetch=original;}
+});
+
+test('Monster Bestie demo is idempotent and isolated per owner',async()=>{
+ const route=await import(moduleURL('app/api/demo/route.ts',url));
+ const a=await (await route.POST(request({}))).json();const b=await (await route.POST(request({}))).json();assert.equal(a.project,b.project);
+ assert.equal(sql.prepare('SELECT COUNT(*) as n FROM scenes WHERE project=?').get(a.project).n,3);
+ const board=sql.prepare('SELECT * FROM boards WHERE id=?').get(a.board);assert.equal(JSON.parse(board.panels).length,6);
+ globalThis.__headers.set('oai-authenticated-user-id','owner-b');const other=await (await route.POST(request({}))).json();assert.notEqual(other.project,a.project);globalThis.__headers.set('oai-authenticated-user-id','owner-a');
+});
+test('Character generation is idempotent and selecting another owner’s reference is rejected',async()=>{
+ const route=await import(moduleURL('app/api/characters/route.ts',url));const original=globalThis.fetch;let calls=0;
+ globalThis.fetch=async(target,init)=>{calls++;assert.equal(target,'https://queue.fal.run/fal-ai/flux/schnell');const p=JSON.parse(init.body);assert.equal(p.num_images,2);assert.equal(p.enable_safety_checker,true);assert.match(p.prompt,/SAME character/);return Response.json({status_url:'https://queue.fal.run/fal-ai/flux/requests/character/status',response_url:'https://queue.fal.run/fal-ai/flux/requests/character'});};
+ try{const body={action:'generate',id:'a2345678-1234-1234-1234-123456789abc',kind:'alien',layout:'sheet',style:'spacecadet',name:'Groan',description:'A patient alien wearing a tiny tiara.'};assert.equal((await route.POST(request(body))).status,200);assert.equal((await route.POST(request(body))).status,200);assert.equal(calls,1);
+ assert.equal((await route.POST(request({action:'select',id:body.id,image:'unowned'}))).status,400);
+ globalThis.__headers.set('oai-authenticated-user-id','owner-b');assert.equal((await route.POST(request({action:'poll',id:body.id}))).status,400);
+ }finally{globalThis.fetch=original;globalThis.__headers.set('oai-authenticated-user-id','owner-a');}
+});
+test('A completed character saves its images and can be selected without another generation',async()=>{
+ const route=await import(moduleURL('app/api/characters/route.ts',url));const original=globalThis.fetch;const previousBucket=globalThis.__env.BUCKET;const saved=[];
+ globalThis.__env.BUCKET={put:async(id,bytes)=>saved.push(id)};
+ globalThis.fetch=async(target,init)=>{
+  if(target==='https://queue.fal.run/fal-ai/flux/requests/character/status')return Response.json({status:'COMPLETED'});
+  if(target==='https://queue.fal.run/fal-ai/flux/requests/character')return Response.json({images:[{url:'https://fal.media/char0.jpg'},{url:'https://fal.media/char1.jpg'}],has_nsfw_concepts:[false,false]});
+  assert.match(String(target),/^https:\/\/fal.media\/char[01].jpg$/);assert.equal(init.redirect,'manual');return new Response(new Uint8Array([255,216,255]));
+ };
+ try{const id='a2345678-1234-1234-1234-123456789abc';assert.equal((await route.POST(request({action:'poll',id}))).status,200);assert.equal(saved.length,2);const c=sql.prepare('SELECT * FROM characters WHERE id=?').get(id);assert.equal(c.status,'COMPLETED');assert.equal((await route.POST(request({action:'select',id,image:saved[0]}))).status,200);assert.equal(sql.prepare('SELECT selected FROM characters WHERE id=?').get(id).selected,saved[0]);
+ }finally{globalThis.fetch=original;globalThis.__env.BUCKET=previousBucket;}
 });
