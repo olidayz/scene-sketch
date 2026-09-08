@@ -13,7 +13,7 @@ export const looks:Record<string,string>={
 export type PromptInput={references?:string[];format_rules?:string;cast_context?:string;prompt:string;model?:string;duration:number;image?:string;endImage?:string;adapt_prompt?:boolean;look?:string;camera?:string;sound?:string};
 export function preparePrompt(input:PromptInput){
   if(input.adapt_prompt===false)return input.prompt;
-  if(input.model&&!['minimax/h3-max','minimax/h3-max-turbo'].includes(input.model))return input.prompt;
+  if(input.model&&!['minimax/h3-max','minimax/h3-max-turbo','minimax/h3'].includes(input.model))return input.prompt;
   const parts=[input.prompt.trim()];
   if(input.format_rules?.trim())parts.push(`Format rules: ${input.format_rules.trim()}`);
   if(input.cast_context?.trim())parts.push(`Recurring cast: ${input.cast_context.trim()}`);
