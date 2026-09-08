@@ -14,6 +14,7 @@ export async function POST(req:Request){try{const u=await owner(req),b=await req
   return Response.json({id:b.id});
  }
  const c=await d.prepare('SELECT * FROM characters WHERE id=? AND owner=?').bind(b.id,u).first<any>();if(!c)throw new Error('Character not found.');
+ if(b.action==='rename'){const name=String(b.name||'').trim().slice(0,100);if(!name)throw new Error('Give your character a name.');await d.prepare('UPDATE characters SET name=? WHERE id=? AND owner=?').bind(name,b.id,u).run();return Response.json({ok:true});}
  if(b.action==='select'){if(!JSON.parse(c.images).includes(b.image))throw new Error('Choose one of this character’s generated images.');await d.prepare('UPDATE characters SET selected=? WHERE id=? AND owner=?').bind(b.image,b.id,u).run();return Response.json({ok:true});}
  if(b.action==='poll'){
   if(!['IN_QUEUE','IN_PROGRESS'].includes(c.status))return Response.json({ok:true});

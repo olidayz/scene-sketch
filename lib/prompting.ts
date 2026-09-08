@@ -5,6 +5,9 @@ export const looks:Record<string,string>={
   'As described':'',
   'Super 8':'Super 8 film texture: coarse organic grain, warm colour, soft optical detail, subtle gate weave and gentle exposure variation.',
   'Phone footage':'Casual phone footage with natural exposure, deep focus and small handheld movements.',
+  'CCTV':'Fixed high-corner security camera, wide lens, monochrome low-resolution surveillance footage, flat available light, compression artifacts. No camera movement or overlays.',
+  'News broadcast':'On-location television news footage, eye-level shoulder-mounted camera, clean broadcast color, even practical lighting, documentary immediacy. No captions or channel graphics.',
+  'Glossy commercial':'Premium commercial photography, deliberate close framing, sculpted studio highlights, rich controlled color, pristine optical detail and smooth purposeful camera movement.',
   'Cinematic':'Controlled cinematic lighting, considered composition and natural motion blur.',
 };
 export type PromptInput={prompt:string;model?:string;duration:number;image?:string;endImage?:string;adapt_prompt?:boolean;look?:string;camera?:string;sound?:string};

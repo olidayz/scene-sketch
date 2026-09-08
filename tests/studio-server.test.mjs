@@ -70,3 +70,18 @@ test('A completed character saves its images and can be selected without another
  try{const id='a2345678-1234-1234-1234-123456789abc';assert.equal((await route.POST(request({action:'poll',id}))).status,200);assert.equal(saved.length,2);const c=sql.prepare('SELECT * FROM characters WHERE id=?').get(id);assert.equal(c.status,'COMPLETED');assert.equal((await route.POST(request({action:'select',id,image:saved[0]}))).status,200);assert.equal(sql.prepare('SELECT selected FROM characters WHERE id=?').get(id).selected,saved[0]);
  }finally{globalThis.fetch=original;globalThis.__env.BUCKET=previousBucket;}
 });
+test('Visual look choices survive saving and adapt the submitted prompt',async()=>{
+ const prompting=await import(moduleURLPrompt);
+ for(const look of ['Phone footage','Super 8','CCTV','News broadcast','Glossy commercial']){
+  const draft=studio.parseDraft({...studio.defaults,prompt:'An alien holds coffee.',look});
+  assert.equal(draft.look,look);assert.ok(prompting.preparePrompt(draft).includes(prompting.looks[look]));
+ }
+});
+test('Scene character links persist and reject references outside the owner’s cast',async()=>{
+ const workspace=await import(moduleURL('app/api/workspace/route.ts',url));
+ const c=sql.prepare('SELECT * FROM characters WHERE owner=?').get('owner-a');
+ const draft={...studio.defaults,prompt:'The alien drinks tea.',character_id:c.id,character_image:JSON.parse(c.images)[0]};
+ assert.equal((await workspace.POST(request({action:'draft',id:'scene-a',draft}))).status,200);
+ assert.equal(JSON.parse(sql.prepare('SELECT draft FROM scenes WHERE id=?').get('scene-a').draft).character_id,c.id);
+ assert.equal((await workspace.POST(request({action:'draft',id:'scene-a',draft:{...draft,character_image:'not-an-owned-reference'}}))).status,400);
+});
