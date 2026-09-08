@@ -10,7 +10,7 @@ export const looks:Record<string,string>={
   'Glossy commercial':'Premium commercial photography, deliberate close framing, sculpted studio highlights, rich controlled color, pristine optical detail and smooth purposeful camera movement.',
   'Cinematic':'Controlled cinematic lighting, considered composition and natural motion blur.',
 };
-export type PromptInput={format_rules?:string;cast_context?:string;prompt:string;model?:string;duration:number;image?:string;endImage?:string;adapt_prompt?:boolean;look?:string;camera?:string;sound?:string};
+export type PromptInput={references?:string[];format_rules?:string;cast_context?:string;prompt:string;model?:string;duration:number;image?:string;endImage?:string;adapt_prompt?:boolean;look?:string;camera?:string;sound?:string};
 export function preparePrompt(input:PromptInput){
   if(input.adapt_prompt===false)return input.prompt;
   if(input.model&&!['minimax/h3-max','minimax/h3-max-turbo'].includes(input.model))return input.prompt;
@@ -19,6 +19,7 @@ export function preparePrompt(input:PromptInput){
   if(input.cast_context?.trim())parts.push(`Recurring cast: ${input.cast_context.trim()}`);
   if(looks[input.look||''])parts.push(`Look: ${looks[input.look!]}`);
   if(input.camera?.trim())parts.push(`Camera: ${input.camera.trim()}`);
+  if(input.references?.length)parts.push('Use the numbered reference images for subject and style guidance as described in the prompt. They are not opening or ending frames.');
   if(input.image)parts.push(input.endImage?'Use the supplied opening and ending frames as the visual endpoints. Follow the described action between them.':'Use the supplied image as the opening frame. Preserve the subject’s identity and established visual details unless the scene description requests a change.');
   if(input.sound?.trim())parts.push(`Sound: ${input.sound.trim()}`);
   return parts.join('\n\n');
