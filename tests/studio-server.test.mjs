@@ -8,7 +8,7 @@ for(const file of readdirSync('drizzle').filter(x=>x.endsWith('.sql')).sort())sq
 const DB={prepare(query){let args=[];return {bind(...values){args=values;return this;},async first(){return sql.prepare(query).get(...args)||null;},async all(){return {results:sql.prepare(query).all(...args)};},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes)}};}};},async batch(statements){return Promise.all(statements.map(s=>s.run()));}};
 globalThis.__env={DB,KEY_ENCRYPTION_SECRET:'test-only-encryption-secret-not-production'};
 globalThis.__headers=new Headers({'oai-authenticated-user-id':'owner-a'});
-function moduleURL(file,studio){let source=readFileSync(file,'utf8').replace("import { env } from 'cloudflare:workers';","const env = globalThis.__env;").replace("import { headers } from 'next/headers';","const headers = async () => globalThis.__headers;");source=source.replaceAll("'@/lib/demo'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/demo.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64')));if(studio)source=source.replaceAll("'@/lib/studio'",JSON.stringify(studio));source=source.replaceAll("'@/lib/prompting'",JSON.stringify(moduleURLPrompt)).replaceAll("'@/lib/storyboard'",JSON.stringify(moduleURLStoryboard));const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;return 'data:text/javascript;base64,'+Buffer.from(code).toString('base64');}
+function moduleURL(file,studio){let source=readFileSync(file,'utf8').replace("import { env } from 'cloudflare:workers';","const env = globalThis.__env;").replace("import { headers } from 'next/headers';","const headers = async () => globalThis.__headers;");source=source.replaceAll("'@/lib/demo'",JSON.stringify('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/demo.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64')));if(source.includes("'@/lib/formats'"))source=source.replaceAll("'@/lib/formats'",JSON.stringify(moduleURL('lib/formats.ts',studio)));if(studio)source=source.replaceAll("'@/lib/studio'",JSON.stringify(studio));source=source.replaceAll("'@/lib/prompting'",JSON.stringify(moduleURLPrompt)).replaceAll("'@/lib/storyboard'",JSON.stringify(moduleURLStoryboard));const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;return 'data:text/javascript;base64,'+Buffer.from(code).toString('base64');}
 const moduleURLPrompt='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/prompting.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 const moduleURLStoryboard='data:text/javascript;base64,'+Buffer.from(ts.transpileModule(readFileSync('lib/storyboard.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64');
 const url=moduleURL('lib/studio.ts');const studio=await import(url);const generate=await import(moduleURL('app/api/generate/route.ts',url));
@@ -84,4 +84,27 @@ test('Scene character links persist and reject references outside the owner’s 
  assert.equal((await workspace.POST(request({action:'draft',id:'scene-a',draft}))).status,200);
  assert.equal(JSON.parse(sql.prepare('SELECT draft FROM scenes WHERE id=?').get('scene-a').draft).character_id,c.id);
  assert.equal((await workspace.POST(request({action:'draft',id:'scene-a',draft:{...draft,character_image:'not-an-owned-reference'}}))).status,400);
+});
+
+test('Formats own episodes and new scenes inherit style, rules and cast',async()=>{
+ const formats=await import(moduleURL('app/api/formats/route.ts',url)),workspace=await import(moduleURL('app/api/workspace/route.ts',url));
+ const created=await (await formats.POST(request({action:'create',title:'Alien Temu'}))).json();const f=sql.prepare('SELECT * FROM formats WHERE id=?').get(created.id);
+ const c=sql.prepare('SELECT * FROM characters WHERE owner=?').get('owner-a');
+ assert.equal((await formats.POST(request({action:'save',id:f.id,revision:0,title:'Alien Temu',description:'Cheap cosmic products',defaults:{...studio.defaults,look:'CCTV',aspect_ratio:'9:16'},rules:'Unbox, test, rate.',cast:[c.id]}))).status,200);
+ const p=await (await formats.POST(request({action:'episode',id:f.id,title:'Gravity boots'}))).json();
+ const scene=await (await workspace.POST(request({action:'scene',project:p.id,title:'The first step'}))).json();
+ const draft=JSON.parse(sql.prepare('SELECT draft FROM scenes WHERE id=?').get(scene.id).draft);assert.equal(draft.look,'CCTV');assert.equal(draft.format_rules,'Unbox, test, rate.');assert.match(draft.cast_context,/Groan/);
+ assert.equal((await formats.POST(request({action:'save',id:f.id,revision:0,title:'Stale',defaults:studio.defaults,cast:[]}))).status,400);
+ globalThis.__headers.set('oai-authenticated-user-id','owner-b');assert.equal((await formats.POST(request({action:'episode',id:f.id,title:'Not mine'}))).status,400);globalThis.__headers.set('oai-authenticated-user-id','owner-a');
+});
+test('Playground is idempotent, has no format defaults, and promotes scenes without losing takes',async()=>{
+ const workspace=await import(moduleURL('app/api/workspace/route.ts',url));
+ const a=await (await workspace.POST(request({action:'playground'}))).json(),b=await (await workspace.POST(request({action:'playground'}))).json();assert.equal(a.id,b.id);
+ const s=await (await workspace.POST(request({action:'scene',project:a.id,title:'Free test'}))).json();const draft=JSON.parse(sql.prepare('SELECT draft FROM scenes WHERE id=?').get(s.id).draft);assert.equal(draft.format_rules,'');assert.equal(draft.cast_context,'');
+ const existing=sql.prepare('SELECT id FROM takes WHERE scene=?').all('scene-a');const target=sql.prepare("SELECT id FROM projects WHERE kind='episode' LIMIT 1").get();assert.equal((await workspace.POST(request({action:'move_scene',id:'scene-a',project:target.id}))).status,200);assert.deepEqual(sql.prepare('SELECT id FROM takes WHERE scene=?').all('scene-a'),existing);
+});
+test('Episode board lists include legacy boards while excluding other episodes and owners',async()=>{
+ const route=await import(moduleURL('app/api/storyboard/route.ts',url));
+ for(const [id,owner,project] of [['scope-board','owner-a','episode-scope'],['legacy-board','owner-a',''],['other-board','owner-a','other-episode'],['private-board','owner-b','episode-scope']])sql.prepare('INSERT INTO boards (id,owner,title,script,ratio,project,created) VALUES (?,?,?,?,?,?,?)').run(id,owner,id,'Script','9:16',project,1);
+ const response=await route.GET(new Request('https://studio.example/api/storyboard?project=episode-scope'));assert.equal(response.status,200);const rows=await response.json();assert.ok(rows.some(r=>r.id==='scope-board'));assert.ok(rows.some(r=>r.id==='legacy-board'&&r.title.includes('Unassigned')));assert.ok(!rows.some(r=>['other-board','private-board'].includes(r.id)));
 });
