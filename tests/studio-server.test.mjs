@@ -130,3 +130,15 @@ test('Reference cost estimates include dimensions, free allowance and batch coun
  const {price}=await import(moduleURL('lib/pricing.ts',url));const refs=['a','b','c','d','e'],dimensions=Object.fromEntries(refs.map(id=>[id,{width:1024,height:1024}]));
  const d={model:'minimax/h3-max',duration:5,resolution:'768P',references:refs};assert.equal(price({...d,references:refs.slice(0,4)},1,dimensions).total,.4);assert.ok(Math.abs(price(d,2,dimensions).total-.84096)<.000001);assert.equal(price(d).total,null);assert.equal(price({...d,model:'minimax/h3',resolution:'2K'}).total,.65);assert.equal(price({...d,model:'minimax/h3',resolution:'4K',references:[...refs,'f']}).total,.88);
 });
+test('fal preserves useful rejection reasons and distinguishes rejection from uncertain submission',async()=>{
+ const original=globalThis.fetch;try{
+ globalThis.fetch=async()=>Response.json({detail:[{loc:['body','resolution'],msg:'Unsupported resolution'}]},{status:422});
+ const r=await generate.POST(request({id:'e2345678-1234-1234-1234-123456789abc',scene:'scene-a',draft:{...studio.defaults,prompt:'An alien waves.'}}));assert.equal(r.status,400);assert.match((await r.json()).error,/Unsupported resolution/);assert.equal(sql.prepare('SELECT status FROM takes WHERE id=?').get('e2345678-1234-1234-1234-123456789abc').status,'FAILED');
+ globalThis.fetch=async()=>{throw new Error('Network timeout');};await generate.POST(request({id:'f2345678-1234-1234-1234-123456789abc',scene:'scene-a',draft:{...studio.defaults,prompt:'An alien waves.'}}));assert.equal(sql.prepare('SELECT status FROM takes WHERE id=?').get('f2345678-1234-1234-1234-123456789abc').status,'CHECK_REQUIRED');
+ }finally{globalThis.fetch=original;}
+});
+test('Rechecking a failed fal job retrieves its reason without submitting another generation',async()=>{
+ const poll=await import(moduleURL('app/api/poll/route.ts',url));const original=globalThis.fetch;const id='d2345678-1234-1234-1234-123456789abc';sql.prepare("UPDATE takes SET status='FAILED' WHERE id=?").run(id);let calls=0;
+ globalThis.fetch=async(target,init)=>{assert.ok(!init.method||init.method==='GET');calls++;return String(target).endsWith('/status')?Response.json({status:'COMPLETED'}):Response.json({detail:'Provider denied this request: policy check.'},{status:403});};
+ try{assert.equal((await poll.POST(request({id,recheck:true}))).status,200);assert.equal(calls,2);assert.match(sql.prepare('SELECT error FROM takes WHERE id=?').get(id).error,/policy check/);}finally{globalThis.fetch=original;}
+});
