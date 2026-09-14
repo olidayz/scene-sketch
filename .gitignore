@@ -43,3 +43,27 @@ next-env.d.ts
 
 *.tsbuildinfo
 !.env.example
+
+# Worker secrets, credentials, and local database/media state
+.dev.vars
+.dev.vars.*
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-*
+*.log
+/uploads/
+/generated/
+/artifacts/
+/test-results/
+/playwright-report/
+
+# Local editor state
+.idea/
+.vscode/
+*.swp
+*.swo

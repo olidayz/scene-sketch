@@ -1,93 +1,76 @@
-# vinext-starter
+# Scene Sketch / Spacecadet
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Spacecadet’s internal AI video production app: scene tests, reusable formats and episodes, character and style references, storyboards, and fal.ai video generation.
 
-## Prerequisites
+Production: https://scene-sketch-oli.oli3003.chatgpt.site/
 
-- Node.js `>=22.13.0`
-- Linux with `flock`, `curl`, and GNU `timeout`
+This repository was recovered from the original Sites source repository. The published version 14 corresponds to commit `235a692810393fd4fae5ee1ad480981ce6d6d46c`. The original 15 commits are retained. Exporting to GitHub does not redeploy the app or transfer its production data.
 
-## Sites Lifecycle
+## Clone and work on the app
 
-The Sites lifecycle CLI runs the locked dependency install before returning this checkout. Edit the source under `app/`, then checkpoint when a coherent milestone is ready to inspect or share. The remote Sites builder runs `npm run build` against the pushed commit. Do not repeat install or build as a normal pre-checkpoint step.
+Use Node.js 22.13 or newer (verified with Node 22.23) and npm. On Windows, use WSL for the existing shell scripts.
 
-This starter does not use `wrangler.jsonc`.
-
-`install:ci` is intentionally a single, non-retrying `npm ci`. It refuses a concurrent install for the same project, consumes a matching image-seeded npm cache with `--prefer-offline` while retaining registry fallback for a missing cache object, otherwise downloads and verifies the complete vinext tarball recorded in `package-lock.json`, limits npm to one socket, and terminates a stalled install. `build` applies a short timeout. These helpers target Linux and use GNU `timeout`; they are not native macOS scripts.
-
-Scripts that need writable project-scoped home, npm, XDG, and temporary paths use `scripts/sites-env.sh`. The `dev` and `start` scripts honor the caller's runtime environment and keep Wrangler logs inside the checkout. The generated `.sites-runtime/` directory is disposable and ignored by Git.
-
-## Included Shape
-
-- edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
-
-## Workspace Auth Headers
-
-OpenAI workspace sites can read the current user's email from `oai-authenticated-user-email`.
-
-SIWC-authenticated workspace sites may also receive `oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty `name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by `oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```sh
+git clone https://github.com/olidayz/scene-sketch.git
+cd scene-sketch
+npm ci
+git switch -c your-name/your-change
+npm run dev
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+Open the local URL printed by Vite. The existing Linux-only installer and build wrappers require `flock` and GNU `timeout`. These direct commands use the locked local dependencies on macOS and Linux:
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs optional or required ChatGPT sign-in:
+```sh
+npm exec -- vinext build
+node --test tests/*.test.mjs
+```
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send anonymous visitors through Sign in with ChatGPT.
-- In a Server Component, start sign-in with `<a href={chatGPTSignInPath(returnTo)} target="_top">`. The auth helper module is server-only; do not import it into a Client Component.
-- Do not use `fetch`, XHR, a client-side router, or a framework link that can prefetch the sign-in route. SIWC must start as a top-level navigation.
-- Never request the AuthAPI authorization endpoint directly. The dispatch-owned `/signin-with-chatgpt` route must start the SIWC flow.
-- Use `chatGPTSignOutPath(returnTo)` for browser sign-out links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because they depend on per-request identity headers.
+The rendered HTML test needs the build output. Server tests use an in-memory SQLite database and mocked service requests, so they do not generate paid videos.
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the OAuth cookies, and identity header injection. Do not implement app routes for those reserved paths. Routes that do not import and call the helper remain anonymous-compatible.
+### Export verification (14 September 2026)
 
-SIWC establishes identity only; it does not prove workspace membership. Use the Sites hosting platform's access policy controls for workspace-wide restrictions, or enforce explicit server-side membership or allowlist checks.
+The locked `npm ci` install and direct Vinext build succeeded on macOS with Node 22.23. The existing suite ran 32 tests: 30 passed and 2 failed. The rendered HTML test imports a Cloudflare Worker bundle directly into Node, which rejects the `cloudflare:` module protocol. The catalog CSS test expects scrolling utilities absent from the built stylesheet. Application source, tests and dependency versions are unchanged from the recovered published revision; these limitations remain visible for follow-up rather than being hidden or skipped.
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write actions tied to the current ChatGPT user. Leave public content anonymous.
+All 15 recovered commits (223 unique file blobs) were checked for common credential patterns and accidentally tracked environment, runtime or database files. The matches were an explicitly fake test encryption secret and a type declaration. No apparent embedded production credentials were found. Production environment values were not exported.
 
-## Diagnostic Commands
+## Runtime requirements
 
-- `npm run install:ci`: perform the one bounded lockfile install
-- `npm run dev`: start the Vite/Vinext development server
-- `npm run build`: build the deployable Sites artifact
-- `npm run start`: start the built Vinext application
-- `npm test`: build and verify the rendered development-preview metadata
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+The app uses React 19, Vinext/Vite and Cloudflare Workers. Its source, dependency lockfile, static demo assets, and six database migrations are included.
 
-Use build commands for targeted diagnosis after a remote failure, not as part of the normal checkpoint path.
+| Requirement | Purpose |
+| --- | --- |
+| D1 binding `DB` | Projects, scenes, formats, takes, characters and encrypted per-user connections |
+| R2 binding `BUCKET` | Uploaded references, recordings and generated media |
+| `KEY_ENCRYPTION_SECRET` | Encrypts saved per-user fal.ai API keys |
+| `FAL_KEY` | Optional shared fal.ai key; otherwise users connect individual keys |
+| Trusted Sites identity header `oai-authenticated-user-id` | Identifies the current owner for protected workspace operations |
 
-The timeout defaults can be overridden for a controlled canary with `SITES_INSTALL_TIMEOUT`, `SITES_INSTALL_KILL_AFTER`, `SITES_BUILD_TIMEOUT`, and `SITES_BUILD_KILL_AFTER`. A timeout fails the command; the helpers never retry an unchanged install or build.
+`vite.config.ts` declares local D1 and R2 bindings. A local checkout does not contain production database rows, media, secrets, or signed-in sessions. The UI can be previewed locally, but workspace APIs require trusted identity and an initialized database. Sign-in is supplied by the Sites hosting platform; cloning alone does not reproduce that platform. The existing tests provide mocked identity and apply all migrations in memory for server development.
 
-## Learn More
+For local Worker secrets, copy the blank template and fill it privately:
 
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+```sh
+cp .env.example .dev.vars
+```
+
+Use a separate random encryption secret for development. Production’s existing encryption secret must remain unchanged to keep stored connections readable. Never put server keys in browser-visible environment variables. Configuring independent hosting requires its own D1/R2 resources, migrations and trusted authentication layer; the app must not trust identity headers supplied directly by public clients.
+
+## Team workflow and production
+
+Push a feature branch and open a pull request against `main`. GitHub pushes are source checkpoints only: this repository has no deployment workflow, and pushing here does not change the current live site.
+
+The repository is private. The owner can grant the team access in GitHub **Settings → Collaborators**. Existing Sites viewer permissions do not grant GitHub access. Teammates need repository write access to push branches.
+
+`.openai/hosting.json` retains the original Sites project identity and binding names because the build imports this file. It contains configuration, not credentials. Treat deployment to that project as a separate deliberate production action. This GitHub export does not include the short-lived Sites Git credential or automatically connect GitHub to Sites.
+
+## Files and exclusions
+
+- `app/`, `components/`, `lib/`: UI and application behavior.
+- `db/`, `drizzle/`: database schema and migrations.
+- `worker/`, `build/`, `vite.config.ts`: Worker entry and build integration.
+- `tests/`: existing UI, HTML, director and server tests.
+- `public/demo/`: intentional versioned demo reference images.
+
+`.gitignore` excludes local environment files, Worker secrets, dependencies, build output, runtime caches, local databases, uploads, generated media directories, logs and editor state. `.env.example` contains blank placeholders only. Keep `package-lock.json`, migrations and authored/demo assets in Git.
+
+The original starter guidance is retained in [docs/STARTER.md](docs/STARTER.md) for context; use the setup commands above for this export.
