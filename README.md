@@ -18,7 +18,15 @@ git switch -c your-name/your-change
 npm run dev
 ```
 
-Open the local URL printed by Vite. The existing Linux-only installer and build wrappers require `flock` and GNU `timeout`. These direct commands use the locked local dependencies on macOS and Linux:
+Open **http://127.0.0.1:5173/** (or the local URL printed by Vite). `npm run dev` automatically applies migrations to a local database and creates a random encryption secret in ignored `.dev.vars`. You enter a local developer workspace immediately; no ChatGPT account or sign-in is needed. Each computer has its own projects and media. Existing local data and nonblank encryption secrets are preserved on subsequent starts.
+
+If you downloaded a ZIP earlier, download and extract the updated ZIP into a new folder, then run `npm ci` and `npm run dev`. For an existing Git clone, run `git pull`, `npm ci`, and `npm run dev`. Keep the old folder if it contains local work.
+
+Local development listens only on this computer. Do not expose it through a tunnel or use it as a hosted production server. The development identity plugin rejects foreign hosts/origins and is disabled in builds and previews.
+
+Use **Connect fal** in the app to save your own fal.ai key when you want to generate videos. Drafting and project management work without a key. Generation uses that key’s fal balance.
+
+ The existing Linux-only installer and build wrappers require `flock` and GNU `timeout`. These direct commands use the locked local dependencies on macOS and Linux:
 
 ```sh
 npm exec -- vinext build
@@ -29,7 +37,7 @@ The rendered HTML test needs the build output. Server tests use an in-memory SQL
 
 ### Export verification (14 September 2026)
 
-The locked `npm ci` install and direct Vinext build succeeded on macOS with Node 22.23. The existing suite ran 32 tests: 30 passed and 2 failed. The rendered HTML test imports a Cloudflare Worker bundle directly into Node, which rejects the `cloudflare:` module protocol. The catalog CSS test expects scrolling utilities absent from the built stylesheet. Application source, tests and dependency versions are unchanged from the recovered published revision; these limitations remain visible for follow-up rather than being hidden or skipped.
+The locked `npm ci` install and direct Vinext build succeeded on macOS with Node 22.23. The existing suite ran 32 tests: 30 passed and 2 failed. The rendered HTML test imports a Cloudflare Worker bundle directly into Node, which rejects the `cloudflare:` module protocol. The catalog CSS test expects scrolling utilities absent from the built stylesheet. These two baseline failures were present before the local-development fix and remain recorded for follow-up.
 
 All 15 recovered commits (223 unique file blobs) were checked for common credential patterns and accidentally tracked environment, runtime or database files. The matches were an explicitly fake test encryption secret and a type declaration. No apparent embedded production credentials were found. Production environment values were not exported.
 
@@ -45,13 +53,9 @@ The app uses React 19, Vinext/Vite and Cloudflare Workers. Its source, dependenc
 | `FAL_KEY` | Optional shared fal.ai key; otherwise users connect individual keys |
 | Trusted Sites identity header `oai-authenticated-user-id` | Identifies the current owner for protected workspace operations |
 
-`vite.config.ts` declares local D1 and R2 bindings. A local checkout does not contain production database rows, media, secrets, or signed-in sessions. The UI can be previewed locally, but workspace APIs require trusted identity and an initialized database. Sign-in is supplied by the Sites hosting platform; cloning alone does not reproduce that platform. The existing tests provide mocked identity and apply all migrations in memory for server development.
+`vite.config.ts` declares local D1 and R2 bindings. A local checkout does not contain production database rows, media, secrets, or signed-in sessions. `npm run dev` supplies a local identity and initializes that local database automatically. Production sign-in remains supplied by Sites. The local identity exists only in Vite’s development HTTP server, not in the production Worker. The existing server tests use mocked identity and apply all migrations in memory.
 
-For local Worker secrets, copy the blank template and fill it privately:
-
-```sh
-cp .env.example .dev.vars
-```
+Local setup generates `.dev.vars` automatically. To configure an optional shared development `FAL_KEY`, edit that ignored file privately. `.env.example` documents the supported variables; do not overwrite an existing encryption secret.
 
 Use a separate random encryption secret for development. Production’s existing encryption secret must remain unchanged to keep stored connections readable. Never put server keys in browser-visible environment variables. Configuring independent hosting requires its own D1/R2 resources, migrations and trusted authentication layer; the app must not trust identity headers supplied directly by public clients.
 
@@ -74,3 +78,7 @@ The repository is private. The owner can grant the team access in GitHub **Setti
 `.gitignore` excludes local environment files, Worker secrets, dependencies, build output, runtime caches, local databases, uploads, generated media directories, logs and editor state. `.env.example` contains blank placeholders only. Keep `package-lock.json`, migrations and authored/demo assets in Git.
 
 The original starter guidance is retained in [docs/STARTER.md](docs/STARTER.md) for context; use the setup commands above for this export.
+
+## Local-development verification
+
+The local setup applied all six migrations, and the live local API successfully created and reloaded a project and scene without ChatGPT sign-in. The local identity/security tests and existing director/server tests pass (30 tests). Local identity is excluded from production builds. The deployment and access policy of the live Sites app are unchanged.
